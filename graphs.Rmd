@@ -10,24 +10,130 @@ knitr::opts_chunk$set(echo = FALSE)
 library(ggplot2)
 library(dplyr)
 library(tidyr)
+library(data.table)
 ```
 
-## R Markdown
+# Read the data
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+```{r readData}
+seasons <- c("0708", "0809", "0910", "1011", "1112", "1213", "1314")
+assists <- lapply(seasons, function(season) cbind(
+                              read.csv(paste(season, "/assist.csv", sep = "")),
+                              season)) %>% 
+  rbindlist()
 
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+goals <- lapply(seasons, function(season) cbind(
+                              read.csv(paste(season, "/goal.csv", sep = "")),
+                              season)) %>% 
+  rbindlist()
 
-```{r cars}
-summary(cars)
+plusminus <- lapply(seasons, function(season) cbind(
+                              read.csv(paste(season, "/plusminus.csv", sep = "")),
+                              season)) %>% 
+  rbindlist()
+
+points <- lapply(seasons, function(season) cbind(
+                              read.csv(paste(season, "/point.csv", sep = "")),
+                              season)) %>% 
+  rbindlist()
+
 ```
 
-## Including Plots
+# Assists
 
-You can also embed plots, for example:
 
-```{r pressure, echo=FALSE}
-plot(pressure)
+```{r assists}
+# Correlation between seasons
+assists %>% 
+  group_by(season) %>% 
+  summarise(., Pearson = cor(Assists, weighted_assist, method = "pearson"),
+               Kendall = cor(Assists, weighted_assist, method = "kendall"),
+               Spearman = cor(Assists, weighted_assist, method = "spearman"))
+
+# Correlation between players
+# Oklart?
+assists %>% 
+  group_by(PlayerId) %>% 
+  summarise(., AssistsSum = sum(Assists), WAssistsSum = sum(weighted_assist)) %>% 
+  summarise(., cor(AssistsSum, WAssistsSum))
+
+# Assists vs weighted
+assists %>% 
+  ggplot(., aes(Assists, weighted_assist)) + geom_point() + 
+  geom_smooth(method = lm)
+
+# Assists vs weighted per season
+assists %>% 
+  ggplot(., aes(Assists, weighted_assist)) + geom_point() + 
+  geom_smooth() + facet_wrap(~season)
+
+# Histogram
+assists %>% 
+  ggplot(.) + geom_histogram(aes(Assists), fill = "green", alpha = 0.5) + 
+  geom_histogram(aes(weighted_assist), fill = "blue", alpha = 0.3)
+
+# Get top n assisters overall
+assists %>% 
+  group_by(PlayerId) %>% 
+  summarise(, AssistSum = sum(Assists)) %>% 
+  arrange(-AssistSum) %>% 
+  head(10) %>% 
+  pull(PlayerId) -> top10Assisters
+
+# Split per player
+assists %>% 
+  filter(PlayerId %in% top10Assisters) %>% 
+  ggplot(.) + 
+  geom_point(aes(season, weighted_assist, group = PlayerId), color = "blue") + 
+  geom_path(aes(season, weighted_assist, group = PlayerId), color = "blue") + 
+  geom_point(aes(season, Assists, group = PlayerId), color = "red") + 
+  geom_path(aes(season, Assists, group = PlayerId),color = "red") + 
+  facet_wrap(~Playername)#+ geom_smooth(method = lm)
+
+# All players in one (not great)
+assists %>% 
+  filter(PlayerId %in% top10Assisters) %>% 
+  ggplot(.) + 
+  geom_point(aes(season, weighted_assist, group = PlayerId, color = Playername)) + 
+  geom_path(aes(season, weighted_assist, group = PlayerId, color = Playername)) + 
+  geom_point(aes(season, Assists, group = PlayerId, color = Playername)) + 
+  geom_path(aes(season, Assists, group = PlayerId, color = Playername)) 
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+# Goals
+
+
+```{r goals}
+# Correlation between seasons
+goals %>% 
+  group_by(season) %>% 
+  summarise(., Pearson = cor(Goals, Goals_w, method = "pearson"),
+               Kendall = cor(Goals, Goals_w, method = "kendall"),
+               Spearman = cor(Goals, Goals_w, method = "spearman"))
+```
+
+
+# PlusMinus
+
+
+```{r plusminus}
+# Correlation between seasons
+plusminus %>% 
+  group_by(season) %>% 
+  summarise(., Pearson = cor(PlusMinus, PlusMinus_w, method = "pearson"),
+               Kendall = cor(PlusMinus, PlusMinus_w, method = "kendall"),
+               Spearman = cor(PlusMinus, PlusMinus_w, method = "spearman"))
+```
+
+
+# Points
+
+
+```{r points}
+# Correlation between seasons
+points %>% 
+  group_by(season) %>% 
+  summarise(., Pearson = cor(Points, Points_w, method = "pearson"),
+               Kendall = cor(Points, Points_w, method = "kendall"),
+               Spearman = cor(Points, Points_w, method = "spearman"))
+```
