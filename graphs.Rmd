@@ -150,7 +150,9 @@ goals %>%
   group_by(season) %>% 
   summarise(., Pearson = cor(Metric_trad, Metric_weight, method = "pearson"),
                Spearman = cor(Metric_trad, Metric_weight, method = "spearman"),
-               MIC = mine(Metric_trad, Metric_weight)$MIC)
+               MIC = mine(Metric_trad, Metric_weight)$MIC) -> Corr_goals
+
+stargazer(Corr_goals, summary = F)
 ```
 
 
