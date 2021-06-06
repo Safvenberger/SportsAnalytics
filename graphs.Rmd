@@ -65,7 +65,10 @@ assists %>%
   group_by(season) %>% 
   summarise(., Pearson = cor(Metric_trad, Metric_weight, method = "pearson"),
                Spearman = cor(Metric_trad, Metric_weight, method = "spearman"), 
-               MIC = mine(Metric_trad, Metric_weight)$MIC)
+               MIC = mine(Metric_trad, Metric_weight)$MIC) %>%
+  mutate(across(where(is.numeric), round, 3)) -> Corr_assists
+
+stargazer(Corr_assists, summary = F, rownames = F)
 
 # Correlation between players
 # Oklart?
@@ -150,9 +153,10 @@ goals %>%
   group_by(season) %>% 
   summarise(., Pearson = cor(Metric_trad, Metric_weight, method = "pearson"),
                Spearman = cor(Metric_trad, Metric_weight, method = "spearman"),
-               MIC = mine(Metric_trad, Metric_weight)$MIC) -> Corr_goals
+               MIC = mine(Metric_trad, Metric_weight)$MIC) %>%
+  mutate(across(where(is.numeric), round, 3)) -> Corr_goals
 
-stargazer(Corr_goals, summary = F)
+stargazer(Corr_goals, summary = F, rownames = F)
 ```
 
 
@@ -165,7 +169,10 @@ plusminus %>%
   group_by(season) %>% 
   summarise(., Pearson = cor(Metric_trad, Metric_weight, method = "pearson"),
                Spearman = cor(Metric_trad, Metric_weight, method = "spearman"),
-               MIC = mine(Metric_trad, Metric_weight)$MIC)
+               MIC = mine(Metric_trad, Metric_weight)$MIC) %>%
+  mutate(across(where(is.numeric), round, 3)) -> Corr_plusMinus
+
+stargazer(Corr_plusMinus, summary = F, rownames = F)
 ```
 
 
@@ -178,5 +185,8 @@ points %>%
   group_by(season) %>% 
   summarise(., Pearson = cor(Metric_trad, Metric_weight, method = "pearson"),
                Spearman = cor(Metric_trad, Metric_weight, method = "spearman"),
-               MIC = mine(Metric_trad, Metric_weight)$MIC)
+               MIC = mine(Metric_trad, Metric_weight)$MIC) %>%
+  mutate(across(where(is.numeric), round, 3)) -> Corr_points
+
+stargazer(Corr_points, summary = F, rownames = F)
 ```
