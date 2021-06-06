@@ -11,6 +11,8 @@ library(ggplot2)
 library(dplyr)
 library(tidyr)
 library(data.table)
+library(minerva)
+library(plotly)
 ```
 
 # Read the data
@@ -32,19 +34,25 @@ assists <- lapply(seasons, function(season) cbind(
     relocate(starts_with("Rank"), .before = PlayerId) # Change column order
 
 goals <- lapply(seasons, function(season) cbind(
-                              read.csv(paste(season, "/goal.csv", sep = "")),
-                              season)) %>% 
-  rbindlist()
+    read.csv(paste(season, "/goal.csv", sep = "")),
+    season)) %>% 
+    rbindlist() %>% 
+    rename(Metric_trad = Goals, 
+           Metric_weight = Goals_w)
 
 plusminus <- lapply(seasons, function(season) cbind(
-                              read.csv(paste(season, "/plusminus.csv", sep = "")),
-                              season)) %>% 
-  rbindlist()
+    read.csv(paste(season, "/plusminus.csv", sep = "")),
+    season)) %>% 
+    rbindlist() %>% 
+    rename(Metric_trad = PlusMinus, 
+           Metric_weight = PlusMinus_w)
 
 points <- lapply(seasons, function(season) cbind(
-                              read.csv(paste(season, "/point.csv", sep = "")),
-                              season)) %>% 
-  rbindlist()
+    read.csv(paste(season, "/point.csv", sep = "")),
+    season)) %>% 
+    rbindlist() %>% 
+    rename(Metric_trad = Points, 
+           Metric_weight = Points_w)
 
 ```
 
@@ -56,8 +64,8 @@ points <- lapply(seasons, function(season) cbind(
 assists %>% 
   group_by(season) %>% 
   summarise(., Pearson = cor(Metric_trad, Metric_weight, method = "pearson"),
-               Kendall = cor(Metric_trad, Metric_weight, method = "kendall"),
-               Spearman = cor(Metric_trad, Metric_weight, method = "spearman"))
+               Spearman = cor(Metric_trad, Metric_weight, method = "spearman"), 
+               MIC = mine(Metric_trad, Metric_weight)$MIC)
 
 # Correlation between players
 # Oklart?
@@ -106,7 +114,31 @@ assists %>%
   geom_point(aes(season, Metric_weight, group = PlayerId, color = PlayerName)) + 
   geom_path(aes(season, Metric_weight, group = PlayerId, color = PlayerName)) + 
   geom_point(aes(season, Metric_trad, group = PlayerId, color = PlayerName)) + 
-  geom_path(aes(season, Metric_trad, group = PlayerId, color = PlayerName)) 
+  geom_path(aes(season, Metric_trad, group = PlayerId, color = PlayerName))
+
+# BARS
+assists %>%
+  group_by(season) %>% 
+  slice_max(order_by = Metric_weight, n = 30) %>% 
+  #head(30) %>% 
+  arrange(-Rank_diff) %>% 
+  ggplot(., aes(Rank_diff, reorder(PlayerName, -Rank_diff),
+                fill = ifelse(Rank_diff > 0, "green", "red"))
+         ) + 
+  geom_bar(stat = "identity") + 
+  facet_wrap(~season, scales = "free")
+#+  theme(axis.text.x = element_text(angle = 90)) #+ coord_flip()
+
+# 
+assists %>%
+  group_by(season) %>% 
+  slice_max(order_by = Metric_weight, n = 10) %>% 
+  #head(30) %>% 
+  arrange(-Rank_diff) %>% 
+  ggplot(., aes(Rank_trad, Rank_w, color = Rank_diff,
+                PlayerName = PlayerName)) + geom_point() + facet_wrap(~season) -> P 
+ggplotly(P, tooltip = c("PlayerName", "Rank_trad", "Rank_w")) 
+
 ```
 
 # Goals
@@ -117,8 +149,8 @@ assists %>%
 goals %>% 
   group_by(season) %>% 
   summarise(., Pearson = cor(Metric_trad, Metric_weight, method = "pearson"),
-               Kendall = cor(Metric_trad, Metric_weight, method = "kendall"),
-               Spearman = cor(Metric_trad, Metric_weight, method = "spearman"))
+               Spearman = cor(Metric_trad, Metric_weight, method = "spearman"),
+               MIC = mine(Metric_trad, Metric_weight)$MIC)
 ```
 
 
@@ -130,8 +162,8 @@ goals %>%
 plusminus %>% 
   group_by(season) %>% 
   summarise(., Pearson = cor(Metric_trad, Metric_weight, method = "pearson"),
-               Kendall = cor(Metric_trad, Metric_weight, method = "kendall"),
-               Spearman = cor(Metric_trad, Metric_weight, method = "spearman"))
+               Spearman = cor(Metric_trad, Metric_weight, method = "spearman"),
+               MIC = mine(Metric_trad, Metric_weight)$MIC)
 ```
 
 
@@ -143,6 +175,6 @@ plusminus %>%
 points %>% 
   group_by(season) %>% 
   summarise(., Pearson = cor(Metric_trad, Metric_weight, method = "pearson"),
-               Kendall = cor(Metric_trad, Metric_weight, method = "kendall"),
-               Spearman = cor(Metric_trad, Metric_weight, method = "spearman"))
+               Spearman = cor(Metric_trad, Metric_weight, method = "spearman"),
+               MIC = mine(Metric_trad, Metric_weight)$MIC)
 ```
