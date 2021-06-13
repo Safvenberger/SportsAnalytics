@@ -13,6 +13,8 @@ library(tidyr)
 library(data.table)
 library(minerva)
 library(plotly)
+library(stargazer)
+library(ggridges)
 ```
 
 # Read the data
@@ -20,40 +22,32 @@ library(plotly)
 ```{r readData}
 seasons <- c("0708", "0809", "0910", "1011", "1112", "1213", "1314")
 assists <- lapply(seasons, function(season) cbind(
-    read.csv(paste(season, "/assist.csv", sep = "")), season) %>% 
-        arrange(-Assists) %>% 
-        mutate(Rank_trad = seq(1:nrow(.))) %>% # Create rank for traditional metric
-        arrange(-weighted_assist) %>% 
-        mutate(Rank_w = seq(1:nrow(.)), # Create rank for weighted metric
-               Rank_diff = Rank_trad - Rank_w) # Rank difference
-        ) %>% 
+    read.csv(paste(season, "/assist.csv", sep = "")), season)) %>% 
     rbindlist() %>% 
-    rename(PlayerName = Playername,
-           Metric_trad = Assists, 
-           Metric_weight = weighted_assist) %>% 
-    relocate(starts_with("Rank"), .before = PlayerId) # Change column order
+    rename(Metric_trad = Assists, 
+           Metric_weight = Assists_w) 
 
 goals <- lapply(seasons, function(season) cbind(
-    read.csv(paste(season, "/goal.csv", sep = "")),
-    season)) %>% 
+    read.csv(paste(season, "/goal.csv", sep = "")),  season)) %>% 
     rbindlist() %>% 
     rename(Metric_trad = Goals, 
            Metric_weight = Goals_w)
 
 plusminus <- lapply(seasons, function(season) cbind(
-    read.csv(paste(season, "/plusminus.csv", sep = "")),
-    season)) %>% 
+    read.csv(paste(season, "/plusminus.csv", sep = "")), season)) %>% 
     rbindlist() %>% 
     rename(Metric_trad = PlusMinus, 
            Metric_weight = PlusMinus_w)
 
 points <- lapply(seasons, function(season) cbind(
-    read.csv(paste(season, "/point.csv", sep = "")),
-    season)) %>% 
+    read.csv(paste(season, "/point.csv", sep = "")), season)) %>% 
     rbindlist() %>% 
     rename(Metric_trad = Points, 
            Metric_weight = Points_w)
 
+reward <- lapply(seasons, function(season) cbind(
+    read.csv(paste(season, "/reward.csv", sep = "")), season)) %>% 
+    rbindlist()
 ```
 
 # Assists
@@ -157,6 +151,60 @@ goals %>%
   mutate(across(where(is.numeric), round, 3)) -> Corr_goals
 
 stargazer(Corr_goals, summary = F, rownames = F)
+
+goals %>% 
+  mutate(rank = case_when(
+    Rank_trad <= 30 ~ "top30",
+    Rank_trad <= 100 ~ "top100",
+    Rank_trad > 100 ~ "else",
+    TRUE ~ as.character(Rank_trad)
+    )) %>% 
+  filter(Rank_trad <= 30) %>% 
+  ggplot(., aes(Rank_trad, Rank_w, group = PlayerId, color = rank)) + geom_point() + 
+  facet_wrap(~season, scales = "free") + geom_segment(aes(xend = Rank_trad, yend = Rank_w))
+
+# Relative difference of rank difference and weighted rank
+(points %>% 
+  mutate(rel_diff = Rank_trad / Rank_w) %>% 
+  mutate(rank = case_when(
+    Rank_trad <= 10 ~ "top10",
+    Rank_trad <= 30 ~ "top30",
+    Rank_trad <= 100 ~ "top100",
+    Rank_trad > 100 ~ "100 or worse",
+    TRUE ~ as.character(Rank_trad)
+  )) %>% 
+  filter(season == "1314") %>% 
+  #arrange(rel_diff) %>% 
+  ggplot(.) + 
+  #geom_point(aes(Rank_trad, log(rel_diff), PlayerName = PlayerName, color = rel_diff)) + 
+  geom_point(aes(Rank_trad, rel_diff, PlayerName = PlayerName, Rank_w = Rank_w, color = rank)) ) %>% 
+  ggplotly()#+ coord_flip()
+  #select(PlayerName, Rank_trad, Rank_w, Rank_diff, rel_diff) 
+
+
+newP <-points %>% 
+  mutate(rel_diff = Rank_trad / Rank_w) %>% 
+    pull(rel_diff)
+
+clustering <- lapply(1:10, function(x) kmeans(newP, x))
+C <- sapply(clustering, function(x) sum(x$withinss))
+plot(1:10, C, type = "p")
+lines(1:10, C)
+sapply(2:10, function(x) C[x-1] / C[x]) 
+C / cumsum(C)
+
+(points %>% 
+  mutate(rel_diff = Rank_trad / Rank_w, 
+         cluster = factor(clustering[[3]]$cluster)) %>% 
+  filter(season == "1314") %>% 
+  #arrange(rel_diff) %>% 
+  ggplot(.) + 
+  #geom_point(aes(Rank_trad, log(rel_diff), PlayerName = PlayerName, color = rel_diff)) + 
+  geom_point(aes(Rank_trad, rel_diff, 
+                 PlayerName = PlayerName, Rank_w = Rank_w, color = cluster)) ) %>% 
+  ggplotly()#+ coord_flip()
+  #select(PlayerName, Rank_trad, Rank_w, Rank_diff, rel_diff) 
+
 ```
 
 
@@ -190,3 +238,48 @@ points %>%
 
 stargazer(Corr_points, summary = F, rownames = F)
 ```
+# Reward
+```{r reward}
+reward %>% 
+  mutate(GD_new = case_when(
+    GD >= 5 ~ "5+",
+    GD <= -5 ~ "-5+",
+    TRUE ~ as.character(GD)
+    )) -> reward
+
+reward %>% 
+  filter(TotalElapsedTime >= 0,  TotalElapsedTime <= 3600) %>% 
+  ggplot(., aes(TotalElapsedTime, reward, color = GD)) + 
+  geom_bin2d() + 
+  facet_wrap(~season)
+
+ggplot(reward, aes(x = GD, y = as.character(season), fill = stat(x))) +
+  geom_density_ridges_gradient(scale = 1, rel_min_height = 0.01) +
+  scale_fill_viridis_c(name = "Reward", option = "C") #+
+  #geom_density_ridges() +
+  #xlim(c(-2, 2))
+  #facet_wrap(~season)
+
+ggplot(reward, aes(x = reward, y = factor(GD, levels = sort(unique(GD))),
+                   fill = stat(x))) +
+  geom_density_ridges_gradient(scale = 1, rel_min_height = 0.01) +
+  scale_fill_viridis_c(name = "Reward", option = "C") #+ xlim(c(-0.5, 1.5))
+
+quantile(reward$reward, c(0.995))
+
+
+reward %>% 
+  filter(TotalElapsedTime >= 0, TotalElapsedTime <= 3600) %>% 
+  ggplot(., aes(TotalElapsedTime, reward, color = GD)) + geom_point()
+
+
+points %>%
+  group_by(season) %>% 
+  slice_max(order_by = Metric_weight, n = 30) %>% 
+  ggplot(., aes(PlayerName, season, fill = Rank_diff)) + geom_tile()
+```
+
+
+
+
+
