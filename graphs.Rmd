@@ -15,6 +15,15 @@ library(minerva)
 library(plotly)
 library(stargazer)
 library(ggridges)
+library(lubridate)
+library(gridExtra)
+library(ggthemes)
+library(RColorBrewer)
+library(ggrepel)
+
+
+f <- function(pal) brewer.pal(brewer.pal.info[pal, "maxcolors"], pal)
+(palette <- f("Paired"))
 ```
 
 # Read the data
@@ -22,32 +31,44 @@ library(ggridges)
 ```{r readData}
 seasons <- c("0708", "0809", "0910", "1011", "1112", "1213", "1314")
 assists <- lapply(seasons, function(season) cbind(
-    read.csv(paste(season, "/assist.csv", sep = "")), season)) %>% 
+    read.csv(paste(season, "/assist.csv", sep = "")), 
+    season = paste0(substr(season, 1, 2), "-", substr(season, 3, 4)))) %>% 
     rbindlist() %>% 
     rename(Metric_trad = Assists, 
            Metric_weight = Assists_w) 
 
 goals <- lapply(seasons, function(season) cbind(
-    read.csv(paste(season, "/goal.csv", sep = "")),  season)) %>% 
+    read.csv(paste(season, "/goal.csv", sep = "")),
+    season = paste0(substr(season, 1, 2), "-", substr(season, 3, 4)))) %>% 
     rbindlist() %>% 
     rename(Metric_trad = Goals, 
            Metric_weight = Goals_w)
 
 plusminus <- lapply(seasons, function(season) cbind(
-    read.csv(paste(season, "/plusminus.csv", sep = "")), season)) %>% 
+    read.csv(paste(season, "/plusminus.csv", sep = "")), 
+    season = paste0(substr(season, 1, 2), "-", substr(season, 3, 4)))) %>% 
     rbindlist() %>% 
     rename(Metric_trad = PlusMinus, 
            Metric_weight = PlusMinus_w)
 
 points <- lapply(seasons, function(season) cbind(
-    read.csv(paste(season, "/point.csv", sep = "")), season)) %>% 
+    read.csv(paste(season, "/point.csv", sep = "")), 
+    season = paste0(substr(season, 1, 2), "-", substr(season, 3, 4)))) %>% 
     rbindlist() %>% 
     rename(Metric_trad = Points, 
            Metric_weight = Points_w)
 
 reward <- lapply(seasons, function(season) cbind(
-    read.csv(paste(season, "/reward.csv", sep = "")), season)) %>% 
+    read.csv(paste(season, "/reward.csv", sep = "")), 
+    season = paste0(substr(season, 1, 2), "-", substr(season, 3, 4)))) %>% 
     rbindlist()
+
+distance <- lapply(seasons, function(season) cbind(
+    read.csv(paste(season, "/distance.csv", sep = "")), 
+    season = paste0(substr(season, 1, 2), "-", substr(season, 3, 4)))) %>% 
+    rbindlist() %>% 
+  replace(.=="NULL", NA) %>% 
+  mutate(TotalElapsedTime = period_to_seconds(hms(EventTime)) + (1200 * (PeriodNumber - 1)))
 ```
 
 # Assists
@@ -60,81 +81,30 @@ assists %>%
   summarise(., Pearson = cor(Metric_trad, Metric_weight, method = "pearson"),
                Spearman = cor(Metric_trad, Metric_weight, method = "spearman"), 
                MIC = mine(Metric_trad, Metric_weight)$MIC) %>%
-  mutate(across(where(is.numeric), round, 3)) -> Corr_assists
+  mutate(across(where(is.numeric), round, 3),
+         metric = "Assists") -> Corr_assists
 
 stargazer(Corr_assists, summary = F, rownames = F)
 
-# Correlation between players
-# Oklart?
-assists %>% 
-  group_by(PlayerId) %>% 
-  summarise(., AssistsSum = sum(Metric_trad), WAssistsSum = sum(Metric_weight)) %>% 
-  summarise(., cor(AssistsSum, WAssistsSum))
-
-# Assists vs weighted
-assists %>% 
-  ggplot(., aes(Metric_trad, Metric_weight)) + geom_point() + 
-  geom_smooth(method = lm)
 
 # Assists vs weighted per season
 assists %>% 
-  ggplot(., aes(Metric_trad, Metric_weight)) + geom_point() + 
-  geom_smooth() + facet_wrap(~season)
+  ggplot(., aes(Metric_trad, Metric_weight)) + 
+  geom_point(color = palette[2], alpha = 0.3) + 
+  geom_smooth(color = "black") + facet_wrap(~season) +
+  xlab("Assist") + ylab("Weighted assist") + 
+  theme_few() + 
+  theme(strip.text = element_text(face = "bold", size = 13),
+        axis.title = element_text(face = "bold"),
+        axis.text.x = element_text(),
+        legend.position = "top",#c(0.5, 1.15), 
+        legend.direction = "horizontal",
+        legend.title = element_blank(),
+        plot.title = element_text(hjust = 0.5),
+        plot.margin = unit(c(5.5, 5.5, 5.5, 5.5), "pt"))
 
-# Histogram
-assists %>% 
-  ggplot(.) + geom_histogram(aes(Metric_trad), fill = "green", alpha = 0.5) + 
-  geom_histogram(aes(Metric_weight), fill = "blue", alpha = 0.3)
+ggsave("Assists.png", width = 8, height = 6, units = "in")
 
-# Get top n assisters overall
-assists %>% 
-  group_by(PlayerId) %>% 
-  summarise(, AssistSum = sum(Metric_trad)) %>% 
-  arrange(-AssistSum) %>% 
-  head(10) %>% 
-  pull(PlayerId) -> top10Assisters
-
-# Split per player
-assists %>% 
-  filter(PlayerId %in% top10Assisters) %>% 
-  ggplot(.) + 
-  geom_point(aes(season, Metric_weight, group = PlayerId), color = "blue") + 
-  geom_path(aes(season, Metric_weight, group = PlayerId), color = "blue") + 
-  geom_point(aes(season, Metric_trad, group = PlayerId), color = "red") + 
-  geom_path(aes(season, Metric_trad, group = PlayerId),color = "red") + 
-  facet_wrap(~PlayerName)#+ geom_smooth(method = lm)
-
-# All players in one (not great)
-assists %>% 
-  filter(PlayerId %in% top10Assisters) %>% 
-  ggplot(.) + 
-  geom_point(aes(season, Metric_weight, group = PlayerId, color = PlayerName)) + 
-  geom_path(aes(season, Metric_weight, group = PlayerId, color = PlayerName)) + 
-  geom_point(aes(season, Metric_trad, group = PlayerId, color = PlayerName)) + 
-  geom_path(aes(season, Metric_trad, group = PlayerId, color = PlayerName))
-
-# BARS
-assists %>%
-  group_by(season) %>% 
-  slice_max(order_by = Metric_weight, n = 30) %>% 
-  #head(30) %>% 
-  arrange(-Rank_diff) %>% 
-  ggplot(., aes(Rank_diff, reorder(PlayerName, -Rank_diff),
-                fill = ifelse(Rank_diff > 0, "green", "red"))
-         ) + 
-  geom_bar(stat = "identity") + 
-  facet_wrap(~season, scales = "free")
-#+  theme(axis.text.x = element_text(angle = 90)) #+ coord_flip()
-
-# 
-assists %>%
-  group_by(season) %>% 
-  slice_max(order_by = Metric_weight, n = 10) %>% 
-  #head(30) %>% 
-  arrange(-Rank_diff) %>% 
-  ggplot(., aes(Rank_trad, Rank_w, color = Rank_diff,
-                PlayerName = PlayerName)) + geom_point() + facet_wrap(~season) -> P 
-ggplotly(P, tooltip = c("PlayerName", "Rank_trad", "Rank_w")) 
 
 ```
 
@@ -148,62 +118,30 @@ goals %>%
   summarise(., Pearson = cor(Metric_trad, Metric_weight, method = "pearson"),
                Spearman = cor(Metric_trad, Metric_weight, method = "spearman"),
                MIC = mine(Metric_trad, Metric_weight)$MIC) %>%
-  mutate(across(where(is.numeric), round, 3)) -> Corr_goals
+  mutate(across(where(is.numeric), round, 3),
+         metric = "Goals") -> Corr_goals
 
 stargazer(Corr_goals, summary = F, rownames = F)
 
+# Goals vs weighted
 goals %>% 
-  mutate(rank = case_when(
-    Rank_trad <= 30 ~ "top30",
-    Rank_trad <= 100 ~ "top100",
-    Rank_trad > 100 ~ "else",
-    TRUE ~ as.character(Rank_trad)
-    )) %>% 
-  filter(Rank_trad <= 30) %>% 
-  ggplot(., aes(Rank_trad, Rank_w, group = PlayerId, color = rank)) + geom_point() + 
-  facet_wrap(~season, scales = "free") + geom_segment(aes(xend = Rank_trad, yend = Rank_w))
+  ggplot(., aes(Metric_trad, Metric_weight)) + 
+  geom_point(color = palette[4], alpha = 0.3) + 
+  geom_smooth(color = "black") + facet_wrap(~season) +
+  xlab("Goals") + ylab("Weighted goals") + 
+  theme_few() + 
+  theme(strip.text = element_text(face = "bold", size = 13),
+        axis.title = element_text(face = "bold"),
+        axis.text.x = element_text(),
+        legend.position = "top",#c(0.5, 1.15), 
+        legend.direction = "horizontal",
+        legend.title = element_blank(),
+        plot.title = element_text(hjust = 0.5),
+        plot.margin = unit(c(5.5, 5.5, 5.5, 5.5), "pt"))
 
-# Relative difference of rank difference and weighted rank
-(points %>% 
-  mutate(rel_diff = Rank_trad / Rank_w) %>% 
-  mutate(rank = case_when(
-    Rank_trad <= 10 ~ "top10",
-    Rank_trad <= 30 ~ "top30",
-    Rank_trad <= 100 ~ "top100",
-    Rank_trad > 100 ~ "100 or worse",
-    TRUE ~ as.character(Rank_trad)
-  )) %>% 
-  filter(season == "1314") %>% 
-  #arrange(rel_diff) %>% 
-  ggplot(.) + 
-  #geom_point(aes(Rank_trad, log(rel_diff), PlayerName = PlayerName, color = rel_diff)) + 
-  geom_point(aes(Rank_trad, rel_diff, PlayerName = PlayerName, Rank_w = Rank_w, color = rank)) ) %>% 
-  ggplotly()#+ coord_flip()
-  #select(PlayerName, Rank_trad, Rank_w, Rank_diff, rel_diff) 
+ggsave("Goals.png", width = 8, height = 6, units = "in")
 
 
-newP <-points %>% 
-  mutate(rel_diff = Rank_trad / Rank_w) %>% 
-    pull(rel_diff)
-
-clustering <- lapply(1:10, function(x) kmeans(newP, x))
-C <- sapply(clustering, function(x) sum(x$withinss))
-plot(1:10, C, type = "p")
-lines(1:10, C)
-sapply(2:10, function(x) C[x-1] / C[x]) 
-C / cumsum(C)
-
-(points %>% 
-  mutate(rel_diff = Rank_trad / Rank_w, 
-         cluster = factor(clustering[[3]]$cluster)) %>% 
-  filter(season == "1314") %>% 
-  #arrange(rel_diff) %>% 
-  ggplot(.) + 
-  #geom_point(aes(Rank_trad, log(rel_diff), PlayerName = PlayerName, color = rel_diff)) + 
-  geom_point(aes(Rank_trad, rel_diff, 
-                 PlayerName = PlayerName, Rank_w = Rank_w, color = cluster)) ) %>% 
-  ggplotly()#+ coord_flip()
-  #select(PlayerName, Rank_trad, Rank_w, Rank_diff, rel_diff) 
 
 ```
 
@@ -212,15 +150,36 @@ C / cumsum(C)
 
 
 ```{r plusminus}
+palette
 # Correlation between seasons
 plusminus %>% 
   group_by(season) %>% 
   summarise(., Pearson = cor(Metric_trad, Metric_weight, method = "pearson"),
                Spearman = cor(Metric_trad, Metric_weight, method = "spearman"),
                MIC = mine(Metric_trad, Metric_weight)$MIC) %>%
-  mutate(across(where(is.numeric), round, 3)) -> Corr_plusMinus
+  mutate(across(where(is.numeric), round, 3),
+         metric = "Plus-minus") -> Corr_plusMinus
 
 stargazer(Corr_plusMinus, summary = F, rownames = F)
+
+
+# PlusMinus vs weighted
+plusminus %>% 
+  ggplot(., aes(Metric_trad, Metric_weight)) + 
+  geom_point(color = palette[8], alpha = 0.3) + 
+  geom_smooth(color = "black") + facet_wrap(~season) +
+  xlab("Plus-minus") + ylab("Weighted plus-minus") + 
+  theme_few() + 
+  theme(strip.text = element_text(face = "bold", size = 13),
+        axis.title = element_text(face = "bold"),
+        axis.text.x = element_text(),
+        legend.position = "top",#c(0.5, 1.15), 
+        legend.direction = "horizontal",
+        legend.title = element_blank(),
+        plot.title = element_text(hjust = 0.5),
+        plot.margin = unit(c(5.5, 5.5, 5.5, 5.5), "pt"))
+
+ggsave("PlusMinus.png", width = 8, height = 6, units = "in")
 ```
 
 
@@ -234,52 +193,462 @@ points %>%
   summarise(., Pearson = cor(Metric_trad, Metric_weight, method = "pearson"),
                Spearman = cor(Metric_trad, Metric_weight, method = "spearman"),
                MIC = mine(Metric_trad, Metric_weight)$MIC) %>%
-  mutate(across(where(is.numeric), round, 3)) -> Corr_points
+  mutate(across(where(is.numeric), round, 3),
+         metric = "Points") -> Corr_points
 
 stargazer(Corr_points, summary = F, rownames = F)
+
+
+
+# PlusMinus vs weighted
+points %>% 
+  ggplot(., aes(Metric_trad, Metric_weight)) + 
+  geom_point(color = palette[10], alpha = 0.3) + 
+  geom_smooth(color = "black") + facet_wrap(~season) +
+  xlab("Points") + ylab("Weighted points") + 
+  theme_few() + 
+  theme(strip.text = element_text(face = "bold", size = 13),
+        axis.title = element_text(face = "bold"),
+        axis.text.x = element_text(),
+        legend.position = "top",#c(0.5, 1.15), 
+        legend.direction = "horizontal",
+        legend.title = element_blank(),
+        plot.title = element_text(hjust = 0.5),
+        plot.margin = unit(c(5.5, 5.5, 5.5, 5.5), "pt"))
+
+ggsave("Points.png", width = 8, height = 6, units = "in")
 ```
+
+
+
+# Relative diff
+```{r}
+relative_diff_plot <- function(metric, metric_name){
+  
+  # Calculate relative difference
+  newP <- metric %>% 
+    filter(season == "13-14") %>% 
+    mutate(rel_diff = Rank_trad / Rank_w) %>% 
+    pull(rel_diff)
+
+  clustering <- lapply(1:10, function(x) kmeans(newP, x))
+  C <- sapply(clustering, function(x) sum(x$withinss))
+  sapply(2:10, function(x) C[x-1] / C[x]) 
+  C / cumsum(C)
+  
+  metric %>% 
+    filter(season == "13-14") %>% 
+    mutate(rel_diff = Rank_trad / Rank_w, 
+           cluster = factor(clustering[[3]]$cluster)) %>% 
+    #arrange(rel_diff) %>% 
+    ggplot(., aes(Rank_trad, rel_diff)) + #, color = cluster)) + 
+    geom_text_repel(aes(label=PlayerName), key_glyph = "point", max.overlaps = 5) + 
+    geom_point(color = cols[[metric_name]][2]) +
+    xlab("Rank according to traditional metric") + ylab("Traditional rank / Weighted rank") + 
+    theme_few() +
+    theme(strip.text = element_text(face = "bold", size = 13),
+          axis.title = element_text(face = "bold"),
+          axis.text.x = element_text(),
+          legend.position = "top",#c(0.5, 1.15), 
+          legend.direction = "horizontal",
+          legend.title = element_blank(),
+          plot.title = element_text(hjust = 0.5),
+          plot.margin = unit(c(5.5, 5.5, 5.5, 5.5), "pt"))  
+}
+
+relative_diff_plot(assists, "Assists")
+ggsave("RelDiffAssists.png", width = 8, height = 6, units = "in")
+
+relative_diff_plot(goals, "Goals")
+ggsave("RelDiffGoals.png", width = 8, height = 6, units = "in")
+
+relative_diff_plot(plusminus, "PlusMinus")
+ggsave("RelDiffPlusMinus.png", width = 8, height = 6, units = "in")
+
+relative_diff_plot(points, "Points")
+ggsave("RelDiffPoints.png", width = 8, height = 6, units = "in")
+```
+
+
+# Fina tables
+```{r correlations}
+
+# Correlation 
+bind_rows(Corr_assists, Corr_goals, Corr_plusMinus, Corr_points) %>% 
+  pivot_longer(., cols = c(Pearson, Spearman, MIC), names_to = "Correlation") %>% 
+  mutate(Correlation = factor(Correlation, levels = c("Pearson", "Spearman", "MIC"))) %>% 
+  ggplot(., aes(season)) + 
+  geom_line(aes(y = value, group = metric, color = metric), size = 1,
+            key_glyph = "path") +
+  facet_wrap(~Correlation) + xlab("Season") + ylab("Value") +
+  theme_few() + 
+  theme(strip.text = element_text(face = "bold", size = 13),
+        axis.title = element_text(face = "bold"),
+        axis.text.x = element_text(angle = 45, margin = margin(5.5, 0, 5.5, 0, unit = "pt")),
+        legend.position = "top",#c(0.5, 1.15), 
+        legend.direction = "horizontal",
+        legend.title = element_blank(),
+        plot.title = element_text(hjust = 0.5),
+        plot.margin = unit(c(5.5, 5.5, 5.5, 5.5), "pt")) + 
+  scale_color_manual(values = c(palette[1 + 1], palette[3 + 1], palette[7 + 1], palette[9 + 1]))
+
+ggsave("Correlation.png", width = 6, height = 4, units = "in")
+```
+
+
 # Reward
 ```{r reward}
 reward %>% 
   mutate(GD_new = case_when(
-    GD >= 5 ~ "5+",
-    GD <= -5 ~ "-5+",
+    GD >= 5 ~ "5",
+    GD <= -5 ~ "-5",
     TRUE ~ as.character(GD)
-    )) -> reward
+    )) %>% 
+  mutate(GD_new = as.integer(GD_new)) -> reward
 
 reward %>% 
-  filter(TotalElapsedTime >= 0,  TotalElapsedTime <= 3600) %>% 
-  ggplot(., aes(TotalElapsedTime, reward, color = GD)) + 
-  geom_bin2d() + 
-  facet_wrap(~season)
+  group_by(GD) %>% 
+  summarise(mean(reward))
 
-ggplot(reward, aes(x = GD, y = as.character(season), fill = stat(x))) +
-  geom_density_ridges_gradient(scale = 1, rel_min_height = 0.01) +
-  scale_fill_viridis_c(name = "Reward", option = "C") #+
-  #geom_density_ridges() +
-  #xlim(c(-2, 2))
-  #facet_wrap(~season)
-
-ggplot(reward, aes(x = reward, y = factor(GD, levels = sort(unique(GD))),
+ggplot(reward, aes(x = reward, 
+                   y = factor(GD_new, 
+                              levels = sort(unique(GD_new)),
+                              labels = c("<=-5", sort(unique(GD_new))[2:10], ">=5")),
                    fill = stat(x))) +
   geom_density_ridges_gradient(scale = 1, rel_min_height = 0.01) +
-  scale_fill_viridis_c(name = "Reward", option = "C") #+ xlim(c(-0.5, 1.5))
+  scale_fill_viridis_c(name = "Reward", option = "C") + xlim(c(-0.15, 1)) + 
+  xlab("Reward") + ylab("Goal difference") + 
+  theme_few() + 
+  theme(strip.text = element_text(face = "bold", size = 13),
+        axis.title = element_text(face = "bold"),
+        axis.text.x = element_text(),
+        #legend.position = "top",#c(0.5, 1.15), 
+        #legend.direction = "horizontal",
+        #legend.title = element_blank(),
+        plot.title = element_text(hjust = 0.5),
+        plot.margin = unit(c(5.5, 5.5, 5.5, 5.5), "pt")) 
 
-quantile(reward$reward, c(0.995))
+ggsave("GDreward.png", width = 8, height = 6, units = "in")
 
 
+# Yeet
 reward %>% 
   filter(TotalElapsedTime >= 0, TotalElapsedTime <= 3600) %>% 
-  ggplot(., aes(TotalElapsedTime, reward, color = GD)) + geom_point()
+  ggplot(., aes(TotalElapsedTime, reward, color = reward)) + geom_point() + 
+  facet_wrap(~season)
+
+# Yeet  
+reward %>% 
+  filter(TotalElapsedTime >= 0, TotalElapsedTime <= 3600) %>% 
+  ggplot(aes(GD, MD, fill = reward)) + geom_tile()
+```
+
+# Shot distance
+```{r}
+#distance %>% 
+#  inner_join(., reward, by = c("GameId", "TotalElapsedTime", "season")) %>% 
+#  ggplot(., aes(reward, Disposition)) + geom_density_ridges() + xlim(c(-1, 2))
 
 
+distance %>% 
+  inner_join(., reward, by = c("GameId", "TotalElapsedTime", "season")) %>% 
+  ggplot(., aes(ShotDistance, reward, color = reward)) + geom_point(alpha = 0.5) + 
+  scale_color_fermenter(name = "GD", palette = "Set1", direction = -1) 
+
+
+
+distance %>% 
+  inner_join(., reward, by = c("GameId", "TotalElapsedTime", "season")) %>% 
+  ggplot(., aes(y = reward, fill = Disposition)) + geom_density(alpha = 0.7) + 
+  coord_flip() #+facet_wrap(~Disposition)
+```
+
+# Rank diff
+```{r}
+# BARS improvement assists
+assists %>%
+  filter(season == "13-14") %>% 
+  slice_max(order_by = Metric_weight, n = 20) %>% 
+  arrange(-Rank_diff) %>% 
+  ggplot(., aes(Rank_diff, reorder(PlayerName, -Rank_trad),
+                fill = ifelse(Rank_diff > 0, "Improved rank", "Worsened rank"))
+         ) + 
+  geom_bar(stat = "identity") + 
+  scale_fill_manual(values = c(palette[4], palette[6])) + 
+  theme(legend.position = "top") + 
+  scale_x_continuous(breaks = seq(-50, 80, 5)) + 
+  xlab("Rank difference") + ylab("Player") + 
+  theme_few() + 
+  theme(strip.text = element_text(face = "bold", size = 13),
+        axis.title = element_text(face = "bold"),
+        axis.text.x = element_text(),
+        legend.position = "top",#c(0.5, 1.15), 
+        legend.direction = "horizontal",
+        legend.title = element_blank(),
+        plot.title = element_text(hjust = 0.5),
+        plot.margin = unit(c(5.5, 5.5, 5.5, 5.5), "pt"))
+
+ggsave("RankdiffAssists.png", width = 8, height = 6, units = "in")
+
+# BARS improvement goals
+goals %>%
+  filter(season == "13-14") %>% 
+  slice_max(order_by = Metric_weight, n = 20) %>% 
+  arrange(-Rank_diff) %>% 
+  ggplot(., aes(Rank_diff, reorder(PlayerName, -Rank_trad),
+                fill = ifelse(Rank_diff > 0, "Improved rank", "Worsened rank"))
+         ) + 
+  geom_bar(stat = "identity") + 
+  scale_fill_manual(values = c(palette[4], palette[6])) + 
+  theme(legend.position = "top") + 
+  scale_x_continuous(breaks = seq(-50, 80, 5)) + 
+  xlab("Rank difference") + ylab("Player") + 
+  theme_few() + 
+  theme(strip.text = element_text(face = "bold", size = 13),
+        axis.title = element_text(face = "bold"),
+        axis.text.x = element_text(),
+        legend.position = "top",#c(0.5, 1.15), 
+        legend.direction = "horizontal",
+        legend.title = element_blank(),
+        plot.title = element_text(hjust = 0.5),
+        plot.margin = unit(c(5.5, 5.5, 5.5, 5.5), "pt"))
+
+ggsave("RankdiffGoals.png", width = 8, height = 6, units = "in")
+
+# BARS improvement plusminus
+plusminus %>%
+  filter(season == "13-14") %>% 
+  slice_max(order_by = Metric_weight, n = 20) %>% 
+  arrange(-Rank_diff) %>% 
+  ggplot(., aes(Rank_diff, reorder(PlayerName, -Rank_trad),
+                fill = ifelse(Rank_diff > 0, "Improved rank", "Worsened rank"))
+         ) + 
+  geom_bar(stat = "identity") + 
+  scale_fill_manual(values = c(palette[4], palette[6])) + 
+  theme(legend.position = "top") + 
+  scale_x_continuous(breaks = seq(-50, 80, 5)) + 
+  xlab("Rank difference") + ylab("Player") + 
+  theme_few() + 
+  theme(strip.text = element_text(face = "bold", size = 13),
+        axis.title = element_text(face = "bold"),
+        axis.text.x = element_text(),
+        legend.position = "top",#c(0.5, 1.15), 
+        legend.direction = "horizontal",
+        legend.title = element_blank(),
+        plot.title = element_text(hjust = 0.5),
+        plot.margin = unit(c(5.5, 5.5, 5.5, 5.5), "pt"))
+
+ggsave("RankdiffPlusMinus.png", width = 8, height = 6, units = "in")
+
+# BARS improvement points
 points %>%
-  group_by(season) %>% 
-  slice_max(order_by = Metric_weight, n = 30) %>% 
-  ggplot(., aes(PlayerName, season, fill = Rank_diff)) + geom_tile()
+  filter(season == "13-14") %>% 
+  slice_max(order_by = Metric_weight, n = 20) %>% 
+  arrange(-Rank_diff) %>% 
+  ggplot(., aes(Rank_diff, reorder(PlayerName, -Rank_trad),
+                fill = ifelse(Rank_diff > 0, "Improved rank", "Worsened rank"))
+         ) + 
+  geom_bar(stat = "identity") + 
+  scale_fill_manual(values = c(palette[4], palette[6])) + 
+  theme(legend.position = "top") + 
+  scale_x_continuous(breaks = seq(-50, 80, 5)) + 
+  xlab("Rank difference") + ylab("Player") + 
+  theme_few() + 
+  theme(strip.text = element_text(face = "bold", size = 13),
+        axis.title = element_text(face = "bold"),
+        axis.text.x = element_text(),
+        legend.position = "top",#c(0.5, 1.15), 
+        legend.direction = "horizontal",
+        legend.title = element_blank(),
+        plot.title = element_text(hjust = 0.5),
+        plot.margin = unit(c(5.5, 5.5, 5.5, 5.5), "pt"))
+
+ggsave("RankdiffPoints.png", width = 8, height = 6, units = "in")
 ```
 
 
+# Fin graf
+```{r}
+### Fundera ###
+assists %>% 
+  group_by(PlayerName) %>% 
+  summarise(Q = sum(Metric_trad)) %>% 
+  arrange(-Q) %>% 
+  head(3) %>% 
+  pull(PlayerName) -> top3A
+
+goals %>% 
+  group_by(PlayerName) %>% 
+  summarise(Q = sum(Metric_trad)) %>% 
+  arrange(-Q) %>% 
+  head(3) %>% 
+  pull(PlayerName) -> top3G
+
+points %>% 
+  group_by(PlayerName) %>% 
+  summarise(Q = sum(Metric_trad)) %>% 
+  arrange(-Q) %>% 
+  head(3) %>% 
+  pull(PlayerName) -> top3P
+
+plusminus %>% 
+  group_by(PlayerName) %>% 
+  summarise(Q = sum(Metric_trad)) %>% 
+  arrange(-Q) %>% 
+  head(3) %>% 
+  pull(PlayerName) -> top3PM
+
+players <- c("Zdeno Chara", "Alex Ovechkin", "Joe Thornton")
+
+bind_rows(
+  assists %>% 
+    filter(PlayerName %in% players) %>% 
+    mutate(metric = "Assists"),
+  goals %>% 
+    filter(PlayerName %in% players) %>% 
+    mutate(metric = "Goals"),
+  points %>% 
+    filter(PlayerName %in% players) %>% 
+    mutate(metric = "Points"),
+  plusminus %>% 
+    filter(PlayerName %in% players) %>% 
+    mutate(metric = "PlusMinus")
+) -> players_data 
+#%>% 
+# players_data %>% 
+#   ggplot(., aes(season)) + 
+#   geom_path(aes(y = Metric_weight, group = PlayerId), color = "blue") + 
+#   geom_path(aes(y = Metric_trad, group = PlayerId), color = "red") + 
+#   facet_wrap(metric~PlayerName, nrow = 4, ncol = 3)
+
+metrics <- c("Assists", "Goals", "PlusMinus", "Points")
+
+cols <- list("Assists" = c(palette[1], palette[2]),
+             "Goals" = c(palette[3], palette[4]), 
+             "PlusMinus" = c(palette[7], palette[8]),
+             "Points" = c(palette[9], palette[10]))
+
+Chara <- lapply(metrics, 
+       function(x) players_data %>% filter(metric == x, PlayerName == players[1]) %>% 
+         ggplot(., aes(season)) + 
+         geom_path(aes(y = Metric_weight, group = PlayerId, color = x), size = 1) + 
+         geom_path(aes(y = Metric_trad, group = PlayerId, color = paste(x, 1)), size = 1) + 
+         facet_wrap(metric~PlayerName, nrow = 1, ncol = 4, 
+                    labeller = function (labels) {
+               labels <- lapply(labels, as.character)
+               list(do.call(paste, c(labels, list(sep = "\n"))))
+             }) + ylab("") + xlab("") + 
+         theme_few() +
+         theme(axis.text = element_blank(),
+               axis.ticks = element_blank(),
+               legend.position = "none",
+               strip.text = element_text(face = "bold", size = 12),
+               axis.title = element_text(face = "bold")) + 
+         scale_color_manual(labels = c("Weighted", "Traditional"), 
+                     values = c(cols[[x]][1], cols[[x]][2]))
+      )
 
 
+Ovi <- lapply(metrics, 
+       function(x) players_data %>% filter(metric == x, PlayerName == players[2]) %>% 
+         ggplot(., aes(season)) + 
+         geom_path(aes(y = Metric_weight, group = PlayerId, color = x), size = 1) + 
+         geom_path(aes(y = Metric_trad, group = PlayerId, color = paste(x, 1)), size = 1) + 
+         facet_wrap(metric~PlayerName, nrow = 1, ncol = 4,
+                    labeller = function (labels) {
+               labels <- lapply(labels, as.character)
+               list(do.call(paste, c(labels, list(sep = "\n"))))
+             }) + ylab("") + xlab("") + 
+         theme_few() +
+         theme(axis.text = element_blank(),
+               axis.ticks = element_blank(),
+               legend.position = "none",
+               strip.text = element_text(face = "bold", size = 12),
+               axis.title = element_text(face = "bold")) + 
+         scale_color_manual(labels = c("Weighted", "Traditional"), 
+                     values = c(cols[[x]][1], cols[[x]][2]))
+       )
+
+Thornton <- lapply(metrics, 
+       function(x) players_data %>% filter(metric == x, PlayerName == players[3]) %>% 
+         ggplot(., aes(season)) + 
+         geom_path(aes(y = Metric_weight, group = PlayerId, color = x), size = 1) + 
+         geom_path(aes(y = Metric_trad, group = PlayerId, color = paste(x, 1)), size = 1) + 
+         facet_wrap(metric~PlayerName, nrow = 1, ncol = 4,
+                    labeller = function (labels) {
+               labels <- lapply(labels, as.character)
+               list(do.call(paste, c(labels, list(sep = "\n"))))
+             }) + ylab("") + xlab("") + 
+         theme_few() +
+         theme(axis.text = element_blank(),
+               axis.ticks = element_blank(),
+               legend.position = "none",
+               strip.text = element_text(face = "bold", size = 12),
+               axis.title = element_text(face = "bold")) + 
+         scale_color_manual(labels = c("Weighted", "Traditional"), 
+                     values = c(cols[[x]][1], cols[[x]][2]))
+      )
+
+
+min_max <- players_data %>% 
+  group_by(metric) %>% 
+  summarise(min = round(min(Metric_trad, Metric_weight)), 
+            max = round(max(Metric_trad, Metric_weight)) + 5,
+            step = (max-min) / 3)
+
+marg <- unit(c(-4.5, -1.3, -3.5, -2.3), "pt")
+arrangeGrob(grobs = list(
+  # Assist
+  Chara[[1]] +  theme(plot.margin = marg,
+                      axis.text.y = element_text(size = 8),
+                      axis.ticks.y = element_line()) + 
+    scale_y_continuous(limits = c(min_max[1, 2]$min-1, min_max[1, 3]$max), 
+                       breaks = seq(min_max[1, 2]$min-1, min_max[1, 3]$max, 
+                                    15)), 
+  Thornton[[1]] + theme(plot.margin = marg), 
+  Ovi[[1]]  +   theme(plot.margin = marg), 
+  # Goals
+  Chara[[2]] +  theme(plot.margin = marg,
+                      axis.text.y = element_text(size = 8),
+                      axis.ticks.y = element_line()) + 
+    scale_y_continuous(limits = c(min_max[2, 2]$min-1, min_max[2, 3]$max), 
+                       breaks = seq(min_max[2, 2]$min-1, min_max[2, 3]$max, 
+                                    20)), 
+  Thornton[[2]] + theme(plot.margin = marg), 
+  Ovi[[2]] +    theme(plot.margin = marg),
+  # PlusMinus
+  Chara[[3]] +  theme(plot.margin =  unit(c(-5.5, -1, -3.5, -6.3), "pt"),
+                      axis.text.y = element_text(size = 8),
+                      axis.ticks.y = element_line()) + 
+    scale_y_continuous(limits = c(min_max[3, 2]$min, min_max[3, 3]$max),
+                       breaks = seq(min_max[3, 2]$min, min_max[3, 3]$max, 
+                                    25)) +
+    labs(tag = "Metric value") +
+    theme(plot.tag.position = c(0.06, 0.85), 
+          plot.tag = element_text(angle = 90, size = 10, face = "bold")), 
+  Thornton[[3]] + theme(plot.margin = marg), 
+  Ovi[[3]] +    theme(plot.margin = marg), 
+  # Points
+  Chara[[4]] +  theme(plot.margin = unit(c(-4.5, -1.3, -7.5, -2.3), "pt"),
+                      axis.text.y = element_text(size = 8),
+                      axis.ticks.y = element_line(),
+                      axis.text.x = element_text(size = 8, angle = 0),
+                      axis.ticks.x = element_line()) + 
+    scale_y_continuous(limits = c(min_max[4, 2]$min, min_max[4, 3]$max), 
+                       breaks = seq(min_max[4, 2]$min, min_max[4, 3]$max, 
+                                    30)), 
+  Thornton[[4]] + theme(plot.margin = unit(c(-4.5, -1.3, -7.5, -2.3), "pt"),
+                      axis.text.x = element_text(size = 8, angle = 0),
+                      axis.ticks.x = element_line()) +
+    labs(tag = "Season") +
+    theme(plot.tag.position = c(0.55, 0.10), 
+          plot.tag = element_text(angle = 0, size = 10, face = "bold")), 
+  Ovi[[4]] +    theme(plot.margin = unit(c(-4.5, -1.3, -7.5, -2.3), "pt"),
+                      axis.text.x = element_text(size = 8, angle = 0),
+                      axis.ticks.x = element_line())) 
+)  -> P
+plot(P)
+ggsave("Chosen.png", P, width = 8, height = 6, units = "in")
+
+```
 
