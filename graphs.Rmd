@@ -330,37 +330,94 @@ ggplot(reward, aes(x = reward,
 
 ggsave("GDreward.png", width = 8, height = 6, units = "in")
 
-
-# Yeet
+# Reward vs time by goal diff
 reward %>% 
+  mutate(Minute = floor(TotalElapsedTime / 60),
+         MD_category = case_when(
+           (MD == 0) ~ "EV",
+           #(MD == 1 | MD == 2) ~ "PP",
+           #(MD == -1 | MD == -2) ~ "SH",
+           (MD == -1 | MD == 1) ~ "1MD",
+           (MD == -2 | MD == 2) ~ "2MD",
+           TRUE ~ "Nah"#as.character(GD)
+      ),
+      GD_category = case_when(
+        (GD == 0) ~ "0Goal",
+        (GD == -1 | GD == 1) ~ "1Goal",
+        #((GD >= -3 & GD <= -2) | (GD >= 2 & GD <= 3) ) ~ "Semi-smol",
+        ((GD == -2 | GD == 2)) ~ "2Goal",
+        #((GD == -3 | GD == 3)) ~ "3Goal",
+        (GD >= 3 | GD <= -3) ~ "Big",
+      TRUE ~ "Nah"#as.character(GD)
+      )) %>% 
   filter(TotalElapsedTime >= 0, TotalElapsedTime <= 3600) %>% 
-  ggplot(., aes(TotalElapsedTime, reward, color = reward)) + geom_point() + 
-  facet_wrap(~season)
+  #group_by(Minute, MD_category) %>%
+  group_by(Minute, GD_category) %>%
+  #group_by(Minute, GD_category, MD_category) %>%
+  summarise(mean = mean(reward), count = n()) %>% 
+  arrange(count) %>% 
+  filter(count >= 4) %>% 
+  ggplot(., aes(Minute, mean, 
+                color = GD_category, 
+                #color = MD_category
+                )) + 
+  geom_line(aes(group = GD_category)) +
+  #geom_smooth(se=T, fill = "gray", alpha = 0.3) 
+  geom_point(alpha = 0.5) + 
+  xlab("Game minute") + ylab("Mean reward") + 
+  theme_few() +
+  theme(strip.text = element_text(face = "bold", size = 13),
+        axis.title = element_text(face = "bold"),
+        axis.text.x = element_text(),
+        legend.position = "top",#c(0.5, 1.15), 
+        legend.direction = "horizontal",
+        #legend.title = element_blank(),
+        plot.title = element_text(hjust = 0.5),
+        plot.margin = unit(c(5.5, 5.5, 5.5, 5.5), "pt")) + 
+  scale_color_manual(values = c(palette[2], palette[4], palette[6], 
+                                palette[8]), #, ),#palette[10]),
+                     labels = c(0,1,2,">=3"),#, ),#">=3"),
+                     name = "Goal difference") 
 
-# Yeet  
-reward %>% 
-  filter(TotalElapsedTime >= 0, TotalElapsedTime <= 3600) %>% 
-  ggplot(aes(GD, MD, fill = reward)) + geom_tile()
 ```
 
 # Shot distance
 ```{r}
-#distance %>% 
-#  inner_join(., reward, by = c("GameId", "TotalElapsedTime", "season")) %>% 
-#  ggplot(., aes(reward, Disposition)) + geom_density_ridges() + xlim(c(-1, 2))
-
-
 distance %>% 
   inner_join(., reward, by = c("GameId", "TotalElapsedTime", "season")) %>% 
-  ggplot(., aes(ShotDistance, reward, color = reward)) + geom_point(alpha = 0.5) + 
-  scale_color_fermenter(name = "GD", palette = "Set1", direction = -1) 
-
-
+  group_by(ShotDistance) %>% 
+  summarise(mean = mean(reward)) %>% 
+  ggplot(., aes(ShotDistance, mean)) + 
+  geom_point(alpha = 0.8, color = palette[8]) + 
+  geom_smooth(color = palette[7], fill = palette[7], alpha = 0.3) + 
+  scale_color_fermenter(name = "GD", palette = "Set1", direction = -1) +  
+  xlab("Shot distance") + ylab("Mean reward") + 
+  theme_few() +
+  theme(strip.text = element_text(face = "bold", size = 13),
+        axis.title = element_text(face = "bold"),
+        axis.text.x = element_text(),
+        legend.position = "top",#c(0.5, 1.15), 
+        legend.direction = "horizontal",
+        #legend.title = element_blank(),
+        plot.title = element_text(hjust = 0.5),
+        plot.margin = unit(c(5.5, 5.5, 5.5, 5.5), "pt"))
+ 
 
 distance %>% 
-  inner_join(., reward, by = c("GameId", "TotalElapsedTime", "season")) %>% 
-  ggplot(., aes(y = reward, fill = Disposition)) + geom_density(alpha = 0.7) + 
-  coord_flip() #+facet_wrap(~Disposition)
+  inner_join(., reward, by = c("GameId", "TotalElapsedTime", "season")) %>%
+  ggplot(., aes(y = reward, fill = Disposition)) + geom_density(alpha = 0.5) + 
+  coord_flip() + 
+  xlab("Density") + ylab("Reward") + 
+  theme_few() +
+  theme(strip.text = element_text(face = "bold", size = 13),
+        axis.title = element_text(face = "bold"),
+        axis.text.x = element_text(),
+        legend.position = "top",#c(0.5, 1.15), 
+        legend.direction = "horizontal",
+        #legend.title = element_blank(),
+        plot.title = element_text(hjust = 0.5),
+        plot.margin = unit(c(5.5, 5.5, 5.5, 5.5), "pt")) +
+  scale_fill_manual(values = c(palette[2], palette[4], palette[8])) 
 ```
 
 # Rank diff
